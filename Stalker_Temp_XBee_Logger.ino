@@ -15,6 +15,8 @@
 #include <Fat16util.h>
 #include <XBee.h>
 
+#define DEBUG
+
 //The following code is taken from sleep.h as Arduino Software v22 (avrgcc), in w32 does not have the latest sleep.h file
 #define sleep_bod_disable() \
 { \
@@ -97,6 +99,7 @@ char *ftoa(char *a, double f, int precision)
   return ret;
 }
 
+#ifdef DEBUG
 void flashLed(int pin, int times, int wait) {
     
     for (int i = 0; i < times; i++) {
@@ -109,6 +112,7 @@ void flashLed(int pin, int times, int wait) {
       }
     }
 }
+#endif
 
 void loop () 
 {
@@ -189,10 +193,14 @@ void loop ()
     	   // get the delivery status, the fifth byte
            if (txStatus.getStatus() == SUCCESS) {
             	// success.  time to celebrate
+                #ifdef DEBUG
              	flashLed(statusLed, 5, 100);
+                #endif
            } else {
                 // the remote XBee did not receive our packet. is it powered on?
+                #ifdef DEBUG
              	flashLed(errorLed, 2, 500);
+                #endif
            }
         }      
     } else if (xbee.getResponse().isError()) {
@@ -201,7 +209,9 @@ void loop ()
       // or flash error led
     } else {
       // local XBee did not provide a timely TX Status Response.  Radio is not configured properly or connected
+      #ifdef DEBUG
       flashLed(errorLed, 2, 50);
+      #endif
     }
     
     RTC.clearINTStatus(); //This function call is  a must to bring /INT pin HIGH after an interrupt.
