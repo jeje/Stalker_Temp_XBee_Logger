@@ -30,12 +30,13 @@
                          [not_bodse] "i" (~_BV(BODSE))); \
 }
 
+int statusLed = 8;
+int errorLed = 8;
 
-DS3231 RTC; //Create RTC object for DS3231 RTC come Temp Sensor 
-static uint8_t prevSecond=0; 
+DS3231 RTC; 
 static DateTime interruptTime;
-SdCard card;
-Fat16 file;
+//SdCard card;
+//Fat16 file;
 
 // XBee Configuration -- send data to Xbee router
 XBee xbee;
@@ -48,10 +49,12 @@ TxStatusResponse txStatus = TxStatusResponse();
 void error_P(const char* str) {
   PgmPrint("error: ");
   SerialPrintln_P(str);
+  /*
   if (card.errorCode) {
     PgmPrint("SD error: ");
     Serial.println(card.errorCode, HEX);
   }
+  */
   while(1);
 }
 
@@ -61,18 +64,23 @@ void setup ()
      /*Initialize INT0 pin for accepting interrupts */
      PORTD |= 0x04; 
      DDRD &=~ 0x04;
-     pinMode(4,INPUT);//extern power
+     pinMode(4,INPUT);    //extern power
+     
+     pinMode(statusLed, OUTPUT);
+     //pinMode(errorLed, OUTPUT);
    
      Wire.begin();
      Serial.begin(57600);
      RTC.begin();
      xbee.begin(9600);
      
-     attachInterrupt(0, INT0_ISR, LOW); //Only LOW level interrupt can wake up from PWR_DOWN
+     attachInterrupt(0, INT0_ISR, LOW);     //Only LOW level interrupt can wake up from PWR_DOWN
      set_sleep_mode(SLEEP_MODE_PWR_DOWN);
  
      //Enable Interrupt 
-     RTC.enableInterrupts(EveryMinute); //interrupt at  EverySecond, EveryMinute, EveryHour
+     //RTC.enableInterrupts(EveryMinute);     //interrupt at  EverySecond, EveryMinute, EveryHour
+     DateTime  start = RTC.now();
+     interruptTime = DateTime(start.get() + 30); //Add 30 seconds to start time
 }
 
 char *ftoa(char *a, double f, int precision)
@@ -89,34 +97,28 @@ char *ftoa(char *a, double f, int precision)
   return ret;
 }
 
+void flashLed(int pin, int times, int wait) {
+    
+    for (int i = 0; i < times; i++) {
+      digitalWrite(pin, HIGH);
+      delay(wait);
+      digitalWrite(pin, LOW);
+      
+      if (i + 1 < times) {
+        delay(wait);
+      }
+    }
+}
+
 void loop () 
 {
     ////////////////////// START : Application or data logging code//////////////////////////////////
     RTC.convertTemperature();          //convert current temperature into registers
     float temp = RTC.getTemperature(); //Read temperature sensor value
     
-    DateTime now = RTC.now(); //get the current date-time    
-    if((now.second()) !=  prevSecond )
-    {
-    //print only when there is a change
-    //Serial.print(now.year(), DEC);
-    //Serial.print('/');
-    //Serial.print(now.month(), DEC);
-    //Serial.print('/');
-    //Serial.print(now.date(), DEC);
-    //Serial.print(' ');
-    //Serial.print(now.hour(), DEC);
-    //Serial.print(':');
-    //Serial.print(now.minute(), DEC);
-    //Serial.print(':');
-    //Serial.print(now.second(), DEC);
-    //Serial.print("   ");
-    //Serial.print(temp);
-    //Serial.print(" deg C");
-    //Serial.println();
-    }
-     prevSecond = now.second();
+    DateTime now = RTC.now(); //get the current date-time
     
+    /*
     //|||||||||||||||||||Write to Disk||||||||||||||||||||||||||||||||||
     // initialize the SD card
     if (!card.init()) error("card.init");
@@ -151,14 +153,28 @@ void loop ()
     if (!file.close()) 
         error("error closing file");
     //|||||||||||||||||||Write to Disk||||||||||||||||||||||||||||||||||
+    */
     
     // Send data to XBee Gateway
-    char tempChar[40];
-    byte tempBytes[41];
+    char tempChar[100];
+    byte tempBytes[101];
     
-    String tempStr = String("Temperature is: ");
+    String tempStr = String("At ");
+    tempStr += now.year();
+    tempStr += "/";
+    tempStr += now.month();
+    tempStr += "/";
+    tempStr += now.date();
+    tempStr += ", ";
+    tempStr += now.hour();
+    tempStr += ":";
+    tempStr += now.minute();
+    tempStr += ":";
+    tempStr += now.second();
+    tempStr += ' ';
     tempStr += ftoa(tempChar, temp, 1);
-    tempStr += " C\n";
+    tempStr += " C";
+    tempStr += "\n";
     tempStr.getBytes(tempBytes, sizeof(tempBytes));
     
     Tx64Request tx = Tx64Request(gateway, tempBytes, tempStr.length());
@@ -167,14 +183,16 @@ void loop ()
     // after sending a tx request, we expect a status response
     // wait up to 5 seconds for the status response
     if (xbee.readPacket(5000)) {
-        // got a response!           	
-    	if (xbee.getResponse().getApiId() == TX_STATUS_RESPONSE) {
+        // got a response!
+        if (xbee.getResponse().getApiId() == TX_STATUS_RESPONSE) {
     	   xbee.getResponse().getZBTxStatusResponse(txStatus);	
     	   // get the delivery status, the fifth byte
            if (txStatus.getStatus() == SUCCESS) {
             	// success.  time to celebrate
+             	flashLed(statusLed, 5, 100);
            } else {
-            	// the remote XBee did not receive our packet. is it powered on?
+                // the remote XBee did not receive our packet. is it powered on?
+             	flashLed(errorLed, 2, 500);
            }
         }      
     } else if (xbee.getResponse().isError()) {
@@ -183,18 +201,17 @@ void loop ()
       // or flash error led
     } else {
       // local XBee did not provide a timely TX Status Response.  Radio is not configured properly or connected
+      flashLed(errorLed, 2, 50);
     }
     
-    
     RTC.clearINTStatus(); //This function call is  a must to bring /INT pin HIGH after an interrupt.
+    RTC.enableInterrupts(interruptTime.hour(),interruptTime.minute(),interruptTime.second());    // set the interrupt at (h,m,s)
     attachInterrupt(0, INT0_ISR, LOW);  //Enable INT0 interrupt (as ISR disables interrupt). This strategy is required to handle LEVEL triggered interrupt
     
     
     ////////////////////////END : Application code //////////////////////////////// 
    
     
-    //\/\/\/\/\/\/\/\/\/\/\/\/Sleep Mode and Power Down routines\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
-            
     //Power Down routines
     cli(); 
     sleep_enable();      // Set sleep enable bit
@@ -209,10 +226,7 @@ void loop ()
     sleep_disable();     // Wakes up sleep and clears enable bit. Before this ISR would have executed
     power_all_enable();  //This shuts enables ADC, TWI, SPI, Timers and USART
     delay(10); //This delay is required to allow CPU to stabilize
-    //Serial.println("Awake from sleep");    
-    
-    //\/\/\/\/\/\/\/\/\/\/\/\/Sleep Mode and Power Saver routines\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
-
+    //Serial.println("Awake from sleep");
 } 
 
   
@@ -221,5 +235,6 @@ void INT0_ISR()
 {
   //Keep this as short as possible. Possibly avoid using function calls
     detachInterrupt(0); 
+    interruptTime = DateTime(interruptTime.get() + 10);    // wake up in 10 seconds
 }
 
