@@ -6,39 +6,25 @@
 //4.Remove all Serial port code, recompile the sketch and upload.
 // This reduces power consumption during battery mode.
 
-#include <avr/sleep.h>
-#include <avr/power.h>
-#include <avr/power.h>
 #include <Wire.h>
 #include <DS3231.h>
 #include <Fat16.h>
 #include <Fat16util.h>
 #include <XBee.h>
+#include "Power.h"
+#include "Battery.h"
 
 #define DEBUG
-
-//The following code is taken from sleep.h as Arduino Software v22 (avrgcc), in w32 does not have the latest sleep.h file
-#define sleep_bod_disable() \
-{ \
-  uint8_t tempreg; \
-  __asm__ __volatile__("in %[tempreg], %[mcucr]" "\n\t" \
-                       "ori %[tempreg], %[bods_bodse]" "\n\t" \
-                       "out %[mcucr], %[tempreg]" "\n\t" \
-                       "andi %[tempreg], %[not_bodse]" "\n\t" \
-                       "out %[mcucr], %[tempreg]" \
-                       : [tempreg] "=&d" (tempreg) \
-                       : [mcucr] "I" _SFR_IO_ADDR(MCUCR), \
-                         [bods_bodse] "i" (_BV(BODS) | _BV(BODSE)), \
-                         [not_bodse] "i" (~_BV(BODSE))); \
-}
 
 int statusLed = 8;
 int errorLed = 8;
 
-DS3231 RTC; 
+DS3231 RTC;
+Power power;
+Battery battery;
 static DateTime interruptTime;
-//SdCard card;
-//Fat16 file;
+SdCard card;
+Fat16 file;
 
 // XBee Configuration -- send data to Xbee router
 XBee xbee;
@@ -51,38 +37,27 @@ TxStatusResponse txStatus = TxStatusResponse();
 void error_P(const char* str) {
   PgmPrint("error: ");
   SerialPrintln_P(str);
-  /*
   if (card.errorCode) {
     PgmPrint("SD error: ");
     Serial.println(card.errorCode, HEX);
   }
-  */
   while(1);
 }
 
 
 void setup () 
 {
-     /*Initialize INT0 pin for accepting interrupts */
-     PORTD |= 0x04; 
-     DDRD &=~ 0x04;
-     pinMode(4,INPUT);    //extern power
+     pinMode(4, INPUT);    //extern power
      
      pinMode(statusLed, OUTPUT);
      //pinMode(errorLed, OUTPUT);
    
      Wire.begin();
      Serial.begin(57600);
-     RTC.begin();
-     xbee.begin(9600);
      
-     attachInterrupt(0, INT0_ISR, LOW);     //Only LOW level interrupt can wake up from PWR_DOWN
-     set_sleep_mode(SLEEP_MODE_PWR_DOWN);
- 
-     //Enable Interrupt 
-     //RTC.enableInterrupts(EveryMinute);     //interrupt at  EverySecond, EveryMinute, EveryHour
-     DateTime  start = RTC.now();
-     interruptTime = DateTime(start.get() + 30); //Add 30 seconds to start time
+     power.initSleepMode();
+     
+     xbee.begin(9600);
 }
 
 char *ftoa(char *a, double f, int precision)
@@ -120,9 +95,10 @@ void loop ()
     RTC.convertTemperature();          //convert current temperature into registers
     float temp = RTC.getTemperature(); //Read temperature sensor value
     
+    float voltage = battery.getVoltage();
+    
     DateTime now = RTC.now(); //get the current date-time
     
-    /*
     //|||||||||||||||||||Write to Disk||||||||||||||||||||||||||||||||||
     // initialize the SD card
     if (!card.init()) error("card.init");
@@ -152,12 +128,13 @@ void loop ()
     file.print(':');
     file.print(now.second(), DEC);
     file.print(',');
-    file.println(temp);
+    file.print(temp);
+    file.print(',');
+    file.println(voltage);
 
     if (!file.close()) 
         error("error closing file");
     //|||||||||||||||||||Write to Disk||||||||||||||||||||||||||||||||||
-    */
     
     // Send data to XBee Gateway
     char tempChar[100];
@@ -178,6 +155,13 @@ void loop ()
     tempStr += ' ';
     tempStr += ftoa(tempChar, temp, 1);
     tempStr += " C";
+    tempStr += "\n";
+    tempStr += "Battery is ";
+    tempStr += ftoa(tempChar, voltage, 2);
+    tempStr += "V, charging: ";
+    tempStr += battery.isCharging() ? "TRUE" : "FALSE";
+    tempStr += ", charged: ";
+    tempStr += battery.isCharged() ? "TRUE" : "FALSE";
     tempStr += "\n";
     tempStr.getBytes(tempBytes, sizeof(tempBytes));
     
@@ -214,37 +198,6 @@ void loop ()
       #endif
     }
     
-    RTC.clearINTStatus(); //This function call is  a must to bring /INT pin HIGH after an interrupt.
-    RTC.enableInterrupts(interruptTime.hour(),interruptTime.minute(),interruptTime.second());    // set the interrupt at (h,m,s)
-    attachInterrupt(0, INT0_ISR, LOW);  //Enable INT0 interrupt (as ISR disables interrupt). This strategy is required to handle LEVEL triggered interrupt
-    
-    
-    ////////////////////////END : Application code //////////////////////////////// 
-   
-    
-    //Power Down routines
-    cli(); 
-    sleep_enable();      // Set sleep enable bit
-    sleep_bod_disable(); // Disable brown out detection during sleep. Saves more power
-    sei();
-        
-    //Serial.println("\nSleeping");
-    delay(10); //This delay is required to allow print to complete
-    //Shut down all peripherals like ADC before sleep. Refer Atmega328 manual
-    power_all_disable(); //This shuts down ADC, TWI, SPI, Timers and USART
-    sleep_cpu();         // Sleep the CPU as per the mode set earlier(power down)  
-    sleep_disable();     // Wakes up sleep and clears enable bit. Before this ISR would have executed
-    power_all_enable();  //This shuts enables ADC, TWI, SPI, Timers and USART
-    delay(10); //This delay is required to allow CPU to stabilize
-    //Serial.println("Awake from sleep");
-} 
-
-  
-//Interrupt service routine for external interrupt on INT0 pin conntected to DS3231 /INT
-void INT0_ISR()
-{
-  //Keep this as short as possible. Possibly avoid using function calls
-    detachInterrupt(0); 
-    interruptTime = DateTime(interruptTime.get() + 10);    // wake up in 10 seconds
+    power.sleepEvery(10);      // sleep for 10 seconds since last wakeup
 }
 
