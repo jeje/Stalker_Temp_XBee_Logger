@@ -154,7 +154,7 @@ void loop ()
   tempStr += ' ';
   tempStr += ftoa(tempChar, temp, 1);
   tempStr += " C";
-  tempStr += "\n";
+  tempStr += "\t";
   tempStr += "Battery is ";
   tempStr += ftoa(tempChar, voltage, 2);
   tempStr += "V, charging: ";

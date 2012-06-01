@@ -2,8 +2,8 @@
 
 Battery::Battery() {
   batteryVoltagePin = A7;
-  chargedPin = 7;
   chargingPin = 6;
+  chargedPin = 7;
   pinMode(batteryVoltagePin, INPUT);
   pinMode(chargedPin, INPUT);
   pinMode(chargingPin, INPUT);
