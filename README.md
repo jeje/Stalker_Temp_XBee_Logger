@@ -3,6 +3,8 @@
 Arduino Sketch for [Stalker v2.1](http://www.seeedstudio.com/depot/seeeduino-stalker-v2-p-727.html?cPath=80) reporting temperature and battery usage over XBee.
 Also logs data in CSV format on the SD-card.
 
+The sketch will make the Stalker to wake up every 10 seconds in order to report temperature and battery usage via the XBee and storage on the SD-card, then sleep 'til next wake up.
+
 
 ## Requirements
 
