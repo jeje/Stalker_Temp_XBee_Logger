@@ -1,4 +1,4 @@
-# XBee/ZigBee Java Tools
+# XBee temperature and battery usage logger
 
 Arduino Sketch for [Stalker v2.1](http://www.seeedstudio.com/depot/seeeduino-stalker-v2-p-727.html?cPath=80) reporting temperature and battery usage over XBee.
 Also logs data in CSV format on the SD-card.
