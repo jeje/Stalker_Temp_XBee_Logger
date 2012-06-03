@@ -161,7 +161,7 @@ void loop ()
   tempStr += battery.isCharging() ? "TRUE" : "FALSE";
   tempStr += ", charged: ";
   tempStr += battery.isCharged() ? "TRUE" : "FALSE";
-  tempStr += "\n";
+  tempStr += "\r\n";
   tempStr.getBytes(tempBytes, sizeof(tempBytes));
     
   Tx64Request tx = Tx64Request(gateway, tempBytes, tempStr.length());
